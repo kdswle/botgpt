@@ -6,6 +6,7 @@ import chatgpt
 import re
 import datetime
 import random
+import traceback
 
 from sqlalchemy.orm import sessionmaker
 from database import engine
@@ -18,6 +19,7 @@ load_dotenv()
 
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 Session = sessionmaker(bind=engine)
+jobs = {}
 
 
 @app.event("app_mention")
@@ -43,6 +45,7 @@ def respond(event, say):
         text = run_bot_filter(text, user, channel)
     except Exception as e:
         text = str(e)
+        traceback.print_exc()
     say(
         text=text
     )
@@ -133,6 +136,7 @@ def create_bot_filter(text, user, channel):
     )
     session.add(new_bot)
     session.commit()
+    jobs[new_bot.name] = add_bot_in_schedule(new_bot)
     return f"bot {bot_name} created"
 
 
@@ -181,6 +185,9 @@ def set_frequency_to_bot_filter(text, user, channel):
     bot.frequency = frequency
     session.add(bot)
     session.commit()
+    if bot.name in jobs.keys():
+        schedule.clear(jobs[bot.name])
+        jobs[bot.name] = add_bot_in_schedule(bot)
     return f"bot {bot_name} frequency updated"
 
 
@@ -317,7 +324,7 @@ def schedule_tasks():
     session = Session()
     bots = session.query(Bot).order_by(Bot.id)
     for bot in bots:
-        add_bot_in_schedule(bot)
+        jobs[bot.name] = add_bot_in_schedule(bot)
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -326,21 +333,20 @@ def schedule_tasks():
 def add_bot_in_schedule(bot):
     if bot.frequency == "daily":
         start_from = bot.start_from.strftime("%H:%M")
-        schedule.every().day.at(start_from).do(bot_run(bot))
-        return
+        return schedule.every().day.at(start_from).do(lambda: bot_run(bot))
     frequency = int(bot.frequency[:-1])
     unit = bot.frequency[-1]
+
     if unit == "s":
-        schedule.every(frequency).seconds.do(bot_run(bot))
-        return
+        return schedule.every(frequency).seconds.do(lambda: bot_run(bot))
     if unit == "m":
-        schedule.every(frequency).minutes.do(bot_run(bot))
-        return
+        return schedule.every(frequency).minutes.do(lambda: bot_run(bot))
     if unit == "h":
-        schedule.every(frequency).hours.do(bot_run(bot))
-        return
+        return schedule.every(frequency).hours.do(lambda: bot_run(bot))
 
 
 if __name__ == "__main__":
-    threading.Thread(target=schedule_tasks)
+    schedule_thread = threading.Thread(target=schedule_tasks)
+    schedule_thread.start()
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
+

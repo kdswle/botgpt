@@ -12,8 +12,7 @@ MODEL = "gpt-4"
 
 
 def chat(text, messages_log=[], return_messages=False):
-    messages = [{"role": "system", "content": "あなたはアシスタントです。"}] \
-        + messages_log + [{"role": "user", "content": text}]
+    messages = messages_log + [{"role": "user", "content": text}]
     response = openai.ChatCompletion.create(
         model=MODEL,
         messages=messages,

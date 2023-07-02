@@ -33,6 +33,7 @@ def respond(event, say):
         text = event["text"]
         channel = event["channel"]
         text = create_bot_filter(text, user, channel)
+        text = delete_bot_filter(text, user, channel)
         text = set_template_to_bot_filter(text, user, channel)
         text = set_tones_to_bot_filter(text, user, channel)
         text = set_keywords_to_bot_filter(text, user, channel)
@@ -306,10 +307,20 @@ def bot_run(bot):
     return res
 
 
+def bot_run_post(bot):
+    res = bot_run(bot)
+    app.client.chat_postMessage(
+        channel=bot.channel_id,  # 送信先のチャンネルID
+        text=res  # 送信するメッセージ
+    )
+    return res
+
+
 def convert_tone(messages, tone):
     print("messages", messages)
     print("tone", tone)
     if tone == "default":
+        print("default tone res", messages[-1]["content"])
         return messages[-1]["content"]
     prompt = f"上の日本語を{tone}に変換してください"
     return chatgpt.chat(text=prompt, messages_log=messages)
@@ -333,20 +344,19 @@ def schedule_tasks():
 def add_bot_in_schedule(bot):
     if bot.frequency == "daily":
         start_from = bot.start_from.strftime("%H:%M")
-        return schedule.every().day.at(start_from).do(lambda: bot_run(bot))
+        return schedule.every().day.at(start_from).do(lambda: bot_run_post(bot))
     frequency = int(bot.frequency[:-1])
     unit = bot.frequency[-1]
 
     if unit == "s":
-        return schedule.every(frequency).seconds.do(lambda: bot_run(bot))
+        return schedule.every(frequency).seconds.do(lambda: bot_run_post(bot))
     if unit == "m":
-        return schedule.every(frequency).minutes.do(lambda: bot_run(bot))
+        return schedule.every(frequency).minutes.do(lambda: bot_run_post(bot))
     if unit == "h":
-        return schedule.every(frequency).hours.do(lambda: bot_run(bot))
+        return schedule.every(frequency).hours.do(lambda: bot_run_post(bot))
 
 
 if __name__ == "__main__":
     schedule_thread = threading.Thread(target=schedule_tasks)
     schedule_thread.start()
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
-

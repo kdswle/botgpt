@@ -6,10 +6,9 @@ Base = declarative_base()
 
 class Bot(Base):
     __tablename__ = 'bots'
-
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
-    channel_id = Column(Integer, nullable=False)
+    channel_id = Column(String(255), nullable=False)
     tones = Column(Text, nullable=False)
     keywords = Column(Text, nullable=False)
     template_id = Column(Integer, ForeignKey('templates.id'), nullable=False)
@@ -20,7 +19,6 @@ class Bot(Base):
 
 class Template(Base):
     __tablename__ = 'templates'
-
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
     text = Column(Text, nullable=False)

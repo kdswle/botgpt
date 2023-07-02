@@ -5,6 +5,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 import chatgpt
 import re
 import datetime
+import random
 
 from sqlalchemy.orm import sessionmaker
 from database import engine
@@ -28,11 +29,14 @@ def respond(event, say):
         channel = event["channel"]
         text = create_bot_filter(text, user, channel)
         text = set_template_to_bot_filter(text, user, channel)
+        text = set_tones_to_bot_filter(text, user, channel)
+        text = set_keywords_to_bot_filter(text, user, channel)
         text = create_template_filter(text, user, channel)
         text = delete_template_filter(text, user, channel)
         text = set_template_filter(text, user, channel)
         text = show_templates_filter(text, user, channel)
         text = show_bots_filter(text, user, channel)
+        text = run_bot_filter(text, user, channel)
     except Exception as e:
         text = str(e)
     say(
@@ -116,7 +120,7 @@ def create_bot_filter(text, user, channel):
     new_bot = Bot(
         name=bot_name,
         channel_id=channel,
-        tones="ラッパーの口調,default,幼い子供の口調",
+        tones="default,ラッパーの口調,幼い子供の口調,吟遊詩人の口調,老人の口調,語尾が「ぴょん」の口調",
         keywords="バックエンド,フロントエンド,セキュリティ",
         template_id=template_id,
         frequency="24h",
@@ -129,27 +133,74 @@ def create_bot_filter(text, user, channel):
 
 
 def set_template_to_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> set template (\S+) ?(\S[\s\S]*)\Z'
+    pattern = r'\A<[^>]*> set (\S+) template (\S+)\Z'
     result = re.match(pattern, text)
     if not result:
         return text
     bot_name = result.group(1)
     session = Session()
     bot = session.query(Bot).filter(
-        Template.name == bot_name).first()
+        Bot.name == bot_name).first()
     if not bot:
         raise Exception(f"error: template {bot_name} not found")
     if not result.group(2):
         raise Exception("error: bad request missing template text")
+    if bot.owner_slack_id != user:
+        raise Exception("error: permission error")
     template_name = result.group(2)
     template = session.query(Template).filter(
         Template.name == template_name).first()
+    print("template", template.name)
     if not template:
         raise Exception(f"error: template {template_name} not found")
     bot.template_id = template.id
     session.add(bot)
     session.commit()
-    return f"bot {bot_name} updated"
+    return f"bot {bot_name} template updated"
+
+
+def set_keywords_to_bot_filter(text, user, channel):
+    pattern = r'\A<[^>]*> set (\S+) keywords (\S+)\Z'
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group(1)
+    session = Session()
+    bot = session.query(Bot).filter(
+        Bot.name == bot_name).first()
+    if not bot:
+        raise Exception(f"error: template {bot_name} not found")
+    if not result.group(2):
+        raise Exception("error: bad request missing keywords text")
+    if bot.owner_slack_id != user:
+        raise Exception("error: permission error")
+    keywords = result.group(2)
+    bot.keywords = keywords
+    session.add(bot)
+    session.commit()
+    return f"bot {bot_name} keywords updated"
+
+
+def set_tones_to_bot_filter(text, user, channel):
+    pattern = r'\A<[^>]*> set (\S+) tones (\S+)\Z'
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group(1)
+    session = Session()
+    bot = session.query(Bot).filter(
+        Bot.name == bot_name).first()
+    if not bot:
+        raise Exception(f"error: template {bot_name} not found")
+    if not result.group(2):
+        raise Exception("error: bad request missing tones text")
+    if bot.owner_slack_id != user:
+        raise Exception("error: permission error")
+    tones = result.group(2)
+    bot.tones = tones
+    session.add(bot)
+    session.commit()
+    return f"bot {bot_name} tones updated"
 
 
 def create_template_filter(text, user, channel):
@@ -175,6 +226,21 @@ def create_template_filter(text, user, channel):
     return f"template {template_name} created"
 
 
+def run_bot_filter(text, user, channel):
+    pattern = r'\A<[^>]*> run (\S+)'
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group(1)
+    session = Session()
+    bot = session.query(Bot).filter(
+        Bot.name == bot_name).first()
+    if not bot:
+        raise Exception(f"error: bot {bot_name} not found")
+    text = bot_run(bot)
+    return text
+
+
 def set_template_filter(text, user, channel):
     pattern = r'\A<[^>]*> set template (\S+) ?(\S[\s\S]*)?\Z'
     result = re.match(pattern, text)
@@ -192,6 +258,29 @@ def set_template_filter(text, user, channel):
     session.add(template)
     session.commit()
     return f"template {template_name} updated"
+
+
+def bot_run(bot):
+    session = Session()
+    template = session.query(Template).filter(
+        Template.id == bot.template_id).first()
+    prompt = template.text
+    keyword = random.choice(bot.keywords.split(","))
+    prompt = prompt.replace("[keyword]", keyword)
+    messages = chatgpt.chat(prompt, return_messages=True)
+    print("tones", bot.tones.split(","))
+    tone = random.choice(bot.tones.split(","))
+    res = convert_tone(messages, tone)
+    return res
+
+
+def convert_tone(messages, tone):
+    print("messages", messages)
+    print("tone", tone)
+    if tone == "default":
+        return messages[-1]["content"]
+    prompt = f"上の日本語を{tone}に変換してください"
+    return chatgpt.chat(text=prompt, messages_log=messages)
 
 
 @app.event("message")

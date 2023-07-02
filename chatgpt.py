@@ -11,15 +11,20 @@ print(os.getenv("OPENAI_ORGANIZATION_ID"))
 MODEL = "gpt-4"
 
 
-def chat(text):
+def chat(text, messages_log=[], return_messages=False):
+    messages = [{"role": "system", "content": "あなたはアシスタントです。"}] \
+        + messages_log + [{"role": "user", "content": text}]
     response = openai.ChatCompletion.create(
         model=MODEL,
-        messages=[
-            {"role": "system", "content": "あなたはアシスタントです。"},
-            {"role": "user", "content": text},
-        ],
-        temperature=0,
+        messages=messages,
+        temperature=0.7,
     )
-    return response.choices[0].message.content
+    if not return_messages:
+        return response.choices[0].message.content
+    new_messages = messages \
+        + [{
+            "role": "assistant",
+            "content": response.choices[0].message.content
+        }]
 
-    print(response.choices[0].message.content)
+    return new_messages

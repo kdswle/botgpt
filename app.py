@@ -10,6 +10,9 @@ import random
 from sqlalchemy.orm import sessionmaker
 from database import engine
 from models import Bot, Template
+import schedule
+import threading
+import time
 
 load_dotenv()
 
@@ -31,6 +34,7 @@ def respond(event, say):
         text = set_template_to_bot_filter(text, user, channel)
         text = set_tones_to_bot_filter(text, user, channel)
         text = set_keywords_to_bot_filter(text, user, channel)
+        text = set_frequency_to_bot_filter(text, user, channel)
         text = create_template_filter(text, user, channel)
         text = delete_template_filter(text, user, channel)
         text = set_template_filter(text, user, channel)
@@ -123,7 +127,7 @@ def create_bot_filter(text, user, channel):
         tones="default,ラッパーの口調,幼い子供の口調,吟遊詩人の口調,老人の口調,語尾が「ぴょん」の口調",
         keywords="バックエンド,フロントエンド,セキュリティ",
         template_id=template_id,
-        frequency="24h",
+        frequency="daily",
         start_from=datetime.datetime.now(),
         owner_slack_id=user
     )
@@ -150,13 +154,34 @@ def set_template_to_bot_filter(text, user, channel):
     template_name = result.group(2)
     template = session.query(Template).filter(
         Template.name == template_name).first()
-    print("template", template.name)
     if not template:
         raise Exception(f"error: template {template_name} not found")
     bot.template_id = template.id
     session.add(bot)
     session.commit()
     return f"bot {bot_name} template updated"
+
+
+def set_frequency_to_bot_filter(text, user, channel):
+    pattern = r'\A<[^>]*> set (\S+) frequency (\S+)\Z'
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group(1)
+    session = Session()
+    bot = session.query(Bot).filter(
+        Bot.name == bot_name).first()
+    if not bot:
+        raise Exception(f"error: template {bot_name} not found")
+    if not result.group(2):
+        raise Exception("error: bad request missing frequency text")
+    if bot.owner_slack_id != user:
+        raise Exception("error: permission error")
+    frequency = result.group(2)
+    bot.frequency = frequency
+    session.add(bot)
+    session.commit()
+    return f"bot {bot_name} frequency updated"
 
 
 def set_keywords_to_bot_filter(text, user, channel):
@@ -288,5 +313,34 @@ def handle_message_events(body, logger):
     logger.info(body)
 
 
+def schedule_tasks():
+    session = Session()
+    bots = session.query(Bot).order_by(Bot.id)
+    for bot in bots:
+        add_bot_in_schedule(bot)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+def add_bot_in_schedule(bot):
+    if bot.frequency == "daily":
+        start_from = bot.start_from.strftime("%H:%M")
+        schedule.every().day.at(start_from).do(bot_run(bot))
+        return
+    frequency = int(bot.frequency[:-1])
+    unit = bot.frequency[-1]
+    if unit == "s":
+        schedule.every(frequency).seconds.do(bot_run(bot))
+        return
+    if unit == "m":
+        schedule.every(frequency).minutes.do(bot_run(bot))
+        return
+    if unit == "h":
+        schedule.every(frequency).hours.do(bot_run(bot))
+        return
+
+
 if __name__ == "__main__":
+    threading.Thread(target=schedule_tasks)
     SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()

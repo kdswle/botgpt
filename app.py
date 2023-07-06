@@ -58,15 +58,15 @@ def delete_template_filter(text, user, channel):
     if not result:
         return text
     template_name = result.group(1)
-    session = Session()
-    template = session.query(Template).filter(
-        Template.name == template_name).first()
-    if not template:
-        raise Exception(f"error: template {template_name} not found")
-    if template.owner_slack_id != user:
-        raise Exception("error: permission error")
-    session.delete(template)
-    session.commit()
+    with Session() as session:
+        template = session.query(Template).filter(
+            Template.name == template_name).first()
+        if not template:
+            raise Exception(f"error: template {template_name} not found")
+        if template.owner_slack_id != user:
+            raise Exception("error: permission error")
+        session.delete(template)
+        session.commit()
     return f"template {template_name} deleted"
 
 
@@ -76,15 +76,18 @@ def delete_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
-    if not bot:
-        raise Exception(f"error: bot {bot_name} not found")
-    if bot.owner_slack_id != user:
-        raise Exception("error: permission error")
-    session.delete(bot)
-    session.commit()
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if not bot:
+            raise Exception(f"error: bot {bot_name} not found")
+        if bot.owner_slack_id != user:
+            raise Exception("error: permission error")
+        if bot.name in jobs.keys():
+            schedule.clear(bot.name)
+        session.delete(bot)
+        session.commit()
+    print("delete job",jobs)
     return f"bot {bot_name} deleted"
 
 
@@ -93,8 +96,8 @@ def show_templates_filter(text, user, channel):
     result = re.match(pattern, text)
     if not result:
         return text
-    session = Session()
-    templates = session.query(Template).order_by(Template.id)
+    with Session() as session:
+        templates = session.query(Template).order_by(Template.id)
     template_names = [template.name for template in templates]
     return "\n".join(template_names)
 
@@ -104,8 +107,8 @@ def show_bots_filter(text, user, channel):
     result = re.match(pattern, text)
     if not result:
         return text
-    session = Session()
-    bots = session.query(Bot).order_by(Bot.id)
+    with Session() as session:
+        bots = session.query(Bot).order_by(Bot.id)
     bot_names = [bot.name for bot in bots]
     return "\n".join(bot_names)
 
@@ -116,28 +119,28 @@ def create_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    same_name_bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
-    if same_name_bot:
-        raise Exception(f"error: bot {bot_name} exists")
-    first_template = session.query(Template).order_by(Template.id).first()
-    if first_template is None:
-        raise Exception("error: templates does not defined")
-    template_id = first_template.id
-    new_bot = Bot(
-        name=bot_name,
-        channel_id=channel,
-        tones="default,ラッパーの口調,幼い子供の口調,吟遊詩人の口調,老人の口調,語尾が「ぴょん」の口調",
-        keywords="バックエンド,フロントエンド,セキュリティ",
-        template_id=template_id,
-        frequency="daily",
-        start_from=datetime.datetime.now(),
-        owner_slack_id=user
-    )
-    session.add(new_bot)
-    session.commit()
-    jobs[new_bot.name] = add_bot_in_schedule(new_bot)
+    with Session() as session:
+        same_name_bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if same_name_bot:
+            raise Exception(f"error: bot {bot_name} exists")
+        first_template = session.query(Template).order_by(Template.id).first()
+        if first_template is None:
+            raise Exception("error: templates does not defined")
+        template_id = first_template.id
+        new_bot = Bot(
+            name=bot_name,
+            channel_id=channel,
+            tones="default,ラッパーの口調,幼い子供の口調,吟遊詩人の口調,老人の口調,語尾が「ぴょん」の口調",
+            keywords="バックエンド,フロントエンド,セキュリティ",
+            template_id=template_id,
+            frequency="daily",
+            start_from=datetime.datetime.now(),
+            owner_slack_id=user
+        )
+        session.add(new_bot)
+        session.commit()
+        jobs[new_bot.name] = add_bot_in_schedule(new_bot)
     return f"bot {bot_name} created"
 
 
@@ -147,23 +150,23 @@ def set_template_to_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
-    if not bot:
-        raise Exception(f"error: template {bot_name} not found")
-    if not result.group(2):
-        raise Exception("error: bad request missing template text")
-    if bot.owner_slack_id != user:
-        raise Exception("error: permission error")
-    template_name = result.group(2)
-    template = session.query(Template).filter(
-        Template.name == template_name).first()
-    if not template:
-        raise Exception(f"error: template {template_name} not found")
-    bot.template_id = template.id
-    session.add(bot)
-    session.commit()
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if not bot:
+            raise Exception(f"error: template {bot_name} not found")
+        if not result.group(2):
+            raise Exception("error: bad request missing template text")
+        if bot.owner_slack_id != user:
+            raise Exception("error: permission error")
+        template_name = result.group(2)
+        template = session.query(Template).filter(
+            Template.name == template_name).first()
+        if not template:
+            raise Exception(f"error: template {template_name} not found")
+        bot.template_id = template.id
+        session.add(bot)
+        session.commit()
     return f"bot {bot_name} template updated"
 
 
@@ -173,22 +176,23 @@ def set_frequency_to_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
-    if not bot:
-        raise Exception(f"error: template {bot_name} not found")
-    if not result.group(2):
-        raise Exception("error: bad request missing frequency text")
-    if bot.owner_slack_id != user:
-        raise Exception("error: permission error")
-    frequency = result.group(2)
-    bot.frequency = frequency
-    session.add(bot)
-    session.commit()
-    if bot.name in jobs.keys():
-        schedule.clear(jobs[bot.name])
-        jobs[bot.name] = add_bot_in_schedule(bot)
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if not bot:
+            raise Exception(f"error: template {bot_name} not found")
+        if not result.group(2):
+            raise Exception("error: bad request missing frequency text")
+        if bot.owner_slack_id != user:
+            raise Exception("error: permission error")
+        frequency = result.group(2)
+        bot.frequency = frequency
+        session.add(bot)
+        session.commit()
+
+        if bot_name in jobs.keys():
+            schedule.clear(bot_name)
+            jobs[bot_name] = add_bot_in_schedule(bot)
     return f"bot {bot_name} frequency updated"
 
 
@@ -198,19 +202,19 @@ def set_keywords_to_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
-    if not bot:
-        raise Exception(f"error: template {bot_name} not found")
-    if not result.group(2):
-        raise Exception("error: bad request missing keywords text")
-    if bot.owner_slack_id != user:
-        raise Exception("error: permission error")
-    keywords = result.group(2)
-    bot.keywords = keywords
-    session.add(bot)
-    session.commit()
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if not bot:
+            raise Exception(f"error: template {bot_name} not found")
+        if not result.group(2):
+            raise Exception("error: bad request missing keywords text")
+        if bot.owner_slack_id != user:
+            raise Exception("error: permission error")
+        keywords = result.group(2)
+        bot.keywords = keywords
+        session.add(bot)
+        session.commit()
     return f"bot {bot_name} keywords updated"
 
 
@@ -220,19 +224,19 @@ def set_tones_to_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
-    if not bot:
-        raise Exception(f"error: template {bot_name} not found")
-    if not result.group(2):
-        raise Exception("error: bad request missing tones text")
-    if bot.owner_slack_id != user:
-        raise Exception("error: permission error")
-    tones = result.group(2)
-    bot.tones = tones
-    session.add(bot)
-    session.commit()
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if not bot:
+            raise Exception(f"error: template {bot_name} not found")
+        if not result.group(2):
+            raise Exception("error: bad request missing tones text")
+        if bot.owner_slack_id != user:
+            raise Exception("error: permission error")
+        tones = result.group(2)
+        bot.tones = tones
+        session.add(bot)
+        session.commit()
     return f"bot {bot_name} tones updated"
 
 
@@ -242,20 +246,20 @@ def create_template_filter(text, user, channel):
     if not result:
         return text
     template_name = result.group(1)
-    session = Session()
-    same_name_template = session.query(Template).filter(
-        Template.name == template_name).first()
-    if same_name_template:
-        raise Exception(f"error: template {template_name} exists")
-    print(result.group(1))
-    template_text = result.group(2) if result.group(2) else ""
-    new_template = Template(
-        name=template_name,
-        text=template_text,
-        owner_slack_id=user
-    )
-    session.add(new_template)
-    session.commit()
+    with Session() as session:
+        same_name_template = session.query(Template).filter(
+            Template.name == template_name).first()
+        if same_name_template:
+            raise Exception(f"error: template {template_name} exists")
+        print(result.group(1))
+        template_text = result.group(2) if result.group(2) else ""
+        new_template = Template(
+            name=template_name,
+            text=template_text,
+            owner_slack_id=user
+        )
+        session.add(new_template)
+        session.commit()
     return f"template {template_name} created"
 
 
@@ -265,9 +269,9 @@ def run_bot_filter(text, user, channel):
     if not result:
         return text
     bot_name = result.group(1)
-    session = Session()
-    bot = session.query(Bot).filter(
-        Bot.name == bot_name).first()
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
     if not bot:
         raise Exception(f"error: bot {bot_name} not found")
     text = bot_run(bot)
@@ -280,37 +284,41 @@ def set_template_filter(text, user, channel):
     if not result:
         return text
     template_name = result.group(1)
-    session = Session()
-    template = session.query(Template).filter(
-        Template.name == template_name).first()
-    if not template:
-        raise Exception(f"error: template {template_name} not found")
-    if not result.group(2):
-        raise Exception("error: bad request missing template text")
-    template.text = result.group(2)
-    session.add(template)
-    session.commit()
+    with Session() as session:
+        template = session.query(Template).filter(
+            Template.name == template_name).first()
+        if not template:
+            raise Exception(f"error: template {template_name} not found")
+        if not result.group(2):
+            raise Exception("error: bad request missing template text")
+        template.text = result.group(2)
+        session.add(template)
+        session.commit()
     return f"template {template_name} updated"
 
 
 def bot_run(bot):
-    session = Session()
-    template = session.query(Template).filter(
-        Template.id == bot.template_id).first()
-    prompt = template.text
-    keyword = random.choice(bot.keywords.split(","))
-    prompt = prompt.replace("[keyword]", keyword)
-    messages = chatgpt.chat(prompt, return_messages=True)
-    print("tones", bot.tones.split(","))
-    tone = random.choice(bot.tones.split(","))
-    res = convert_tone(messages, tone)
+    with Session() as session:
+        template = session.query(Template).filter(
+            Template.id == bot.template_id).first()
+        prompt = template.text
+        keyword = random.choice(bot.keywords.split(","))
+        prompt = prompt.replace("[keyword]", keyword)
+        messages = chatgpt.chat(prompt, return_messages=True)
+        print("tones", bot.tones.split(","))
+        tone = random.choice(bot.tones.split(","))
+        res = convert_tone(messages, tone)
     return res
 
 
-def bot_run_post(bot):
+def bot_run_post(bot_id):
+    with Session() as session:
+        bot = session.query(Bot).filter(
+        Bot.id == bot_id).first()
+        channel_id=bot.channel_id
     res = bot_run(bot)
     app.client.chat_postMessage(
-        channel=bot.channel_id,  # 送信先のチャンネルID
+        channel=channel_id,  # 送信先のチャンネルID
         text=res  # 送信するメッセージ
     )
     return res
@@ -332,10 +340,10 @@ def handle_message_events(body, logger):
 
 
 def schedule_tasks():
-    session = Session()
-    bots = session.query(Bot).order_by(Bot.id)
-    for bot in bots:
-        jobs[bot.name] = add_bot_in_schedule(bot)
+    with Session() as session:
+        bots = session.query(Bot).order_by(Bot.id)
+        for bot in bots:
+            jobs[bot.name] = add_bot_in_schedule(bot)
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -344,16 +352,16 @@ def schedule_tasks():
 def add_bot_in_schedule(bot):
     if bot.frequency == "daily":
         start_from = bot.start_from.strftime("%H:%M")
-        return schedule.every().day.at(start_from).do(lambda: bot_run_post(bot))
+        return schedule.every().day.at(start_from).do(lambda: bot_run_post(bot.id)).tag(bot.name)
     frequency = int(bot.frequency[:-1])
     unit = bot.frequency[-1]
 
     if unit == "s":
-        return schedule.every(frequency).seconds.do(lambda: bot_run_post(bot))
+        return schedule.every(frequency).seconds.do(lambda: bot_run_post(bot.id)).tag(bot.name)
     if unit == "m":
-        return schedule.every(frequency).minutes.do(lambda: bot_run_post(bot))
+        return schedule.every(frequency).minutes.do(lambda: bot_run_post(bot.id)).tag(bot.name)
     if unit == "h":
-        return schedule.every(frequency).hours.do(lambda: bot_run_post(bot))
+        return schedule.every(frequency).hours.do(lambda: bot_run_post(bot.id)).tag(bot.name)
 
 
 if __name__ == "__main__":

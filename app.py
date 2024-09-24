@@ -14,12 +14,14 @@ from models import Bot, Template
 import schedule
 import threading
 import time
+from patterns import Patterns
 
 load_dotenv()
 
 app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
 Session = sessionmaker(bind=engine)
 jobs = {}
+ptns = Patterns()
 
 
 @app.event("app_mention")
@@ -43,7 +45,10 @@ def respond(event, say):
         text = set_template_filter(text, user, channel)
         text = show_templates_filter(text, user, channel)
         text = show_bots_filter(text, user, channel)
+        text = show_bot_filter(text, user, channel)
         text = run_bot_filter(text, user, channel)
+        text = help_filter(text, user, channel)
+        text = not_found_filter(text, user, channel)
     except Exception as e:
         text = str(e)
         traceback.print_exc()
@@ -51,9 +56,23 @@ def respond(event, say):
         text=text
     )
 
+def not_found_filter(text, user, channel):
+    pattern = r'\A<[^>]*>'
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    return "command not found"
+
+def help_filter(text, user, channel):
+    pattern = ptns.help_pattern
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    help_docs = "\n".join([f"{key}: {str(value).replace('<[^>]*>','@botgpt')}" for key, value in Patterns.__dict__.items() if key.endswith('_pattern')])
+    return f"help \n {help_docs}"
 
 def delete_template_filter(text, user, channel):
-    pattern = r'\A<[^>]*> delete template (\S+)'
+    pattern = ptns.delete_template_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -71,7 +90,7 @@ def delete_template_filter(text, user, channel):
 
 
 def delete_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> delete bot (\S+)'
+    pattern = ptns.delete_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -92,7 +111,7 @@ def delete_bot_filter(text, user, channel):
 
 
 def show_templates_filter(text, user, channel):
-    pattern = r'\A<[^>]*> show templates'
+    pattern = ptns.show_templates_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -103,18 +122,38 @@ def show_templates_filter(text, user, channel):
 
 
 def show_bots_filter(text, user, channel):
-    pattern = r'\A<[^>]*> show bots'
+    pattern = ptns.show_bots_pattern
     result = re.match(pattern, text)
     if not result:
         return text
     with Session() as session:
         bots = session.query(Bot).order_by(Bot.id)
-    bot_names = [bot.name for bot in bots]
-    return "\n".join(bot_names)
+    bot_infos = [f"{bot.name} {bot.channel_id} {bot.frequency}" for bot in bots]
+    return "\n".join(bot_infos)
+
+def show_bot_filter(text, user, channel):
+    pattern = ptns.show_bot_pattern
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group(1)
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+    if not bot:
+        raise Exception(f"error: bot {bot_name} not found")
+    bot_infos = f"name: {bot.name}\n\
+        channel_id: {bot.channel_id}\n\
+        tones: {bot.tones}\n\
+        keywords: {bot.keywords}\n\
+        template_id: {bot.template_id}\n\
+        frequency: {bot.frequency}\n"
+    return bot_infos
+
 
 
 def create_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> create bot (\S+)'
+    pattern = ptns.create_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -145,7 +184,7 @@ def create_bot_filter(text, user, channel):
 
 
 def set_template_to_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> set (\S+) template (\S+)\Z'
+    pattern = ptns.set_template_to_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -171,7 +210,7 @@ def set_template_to_bot_filter(text, user, channel):
 
 
 def set_frequency_to_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> set (\S+) frequency (\S+)\Z'
+    pattern = ptns.set_frequency_to_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -197,7 +236,7 @@ def set_frequency_to_bot_filter(text, user, channel):
 
 
 def set_keywords_to_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> set (\S+) keywords (\S+)\Z'
+    pattern = ptns.set_keywords_to_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -219,7 +258,7 @@ def set_keywords_to_bot_filter(text, user, channel):
 
 
 def set_tones_to_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> set (\S+) tones (\S+)\Z'
+    pattern = ptns.set_tones_to_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -241,7 +280,7 @@ def set_tones_to_bot_filter(text, user, channel):
 
 
 def create_template_filter(text, user, channel):
-    pattern = r'\A<[^>]*> create template (\S+) ?(\S[\s\S]*)?\Z'
+    pattern = ptns.create_template_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -264,7 +303,7 @@ def create_template_filter(text, user, channel):
 
 
 def run_bot_filter(text, user, channel):
-    pattern = r'\A<[^>]*> run (\S+)'
+    pattern = ptns.run_bot_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -279,7 +318,7 @@ def run_bot_filter(text, user, channel):
 
 
 def set_template_filter(text, user, channel):
-    pattern = r'\A<[^>]*> set template (\S+) ?(\S[\s\S]*)?\Z'
+    pattern = ptns.set_template_pattern
     result = re.match(pattern, text)
     if not result:
         return text
@@ -362,6 +401,8 @@ def add_bot_in_schedule(bot):
         return schedule.every(frequency).minutes.do(lambda: bot_run_post(bot.id)).tag(bot.name)
     if unit == "h":
         return schedule.every(frequency).hours.do(lambda: bot_run_post(bot.id)).tag(bot.name)
+    if unit == "d":
+        return schedule.every(frequency).days.do(lambda: bot_run_post(bot.id)).tag(bot.name)
 
 
 if __name__ == "__main__":

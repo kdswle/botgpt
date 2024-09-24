@@ -161,7 +161,7 @@ def show_bot_filter(text, user, channel):
     keywords: {bot.keywords}\n\
     template_id: {bot.template_id}\n\
     frequency: {bot.frequency}\n\
-    owner: <@{bot.owner_slack_id}>
+    owner: <@{bot.owner_slack_id}>"
     if template:
         bot_infos += f"template: \n\
             name: {template.name}\n\

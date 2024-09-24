@@ -15,6 +15,7 @@ import schedule
 import threading
 import time
 from patterns import Patterns
+import pprint
 
 load_dotenv()
 
@@ -34,6 +35,7 @@ def respond(event, say):
         user = event['user']
         text = event["text"]
         channel = event["channel"]
+        text = easily_create_bot_filter(text, user, channel)
         text = create_bot_filter(text, user, channel)
         text = delete_bot_filter(text, user, channel)
         text = set_template_to_bot_filter(text, user, channel)
@@ -46,6 +48,7 @@ def respond(event, say):
         text = show_templates_filter(text, user, channel)
         text = show_bots_filter(text, user, channel)
         text = show_bot_filter(text, user, channel)
+        text = show_jobs_filter(text, user, channel)
         text = run_bot_filter(text, user, channel)
         text = help_filter(text, user, channel)
         text = not_found_filter(text, user, channel)
@@ -68,8 +71,8 @@ def help_filter(text, user, channel):
     result = re.match(pattern, text)
     if not result:
         return text
-    help_docs = "\n".join([f"{key}: {str(value).replace('<[^>]*>','@botgpt')}" for key, value in Patterns.__dict__.items() if key.endswith('_pattern')])
-    return f"help \n {help_docs}"
+    help_pattern_docs = "\n".join([f"{key}: {str(value).replace('<[^>]*>','@botgpt')}" for key, value in Patterns.__dict__.items() if key.endswith('_pattern')])
+    return f"help \n {help_pattern_docs}"
 
 def delete_template_filter(text, user, channel):
     pattern = ptns.delete_template_pattern
@@ -121,6 +124,13 @@ def show_templates_filter(text, user, channel):
     return "\n".join(template_names)
 
 
+def show_jobs_filter(text, user, channel):
+    pattern = ptns.show_jobs_pattern
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    return pprint.pformat(jobs)
+
 def show_bots_filter(text, user, channel):
     pattern = ptns.show_bots_pattern
     result = re.match(pattern, text)
@@ -128,8 +138,9 @@ def show_bots_filter(text, user, channel):
         return text
     with Session() as session:
         bots = session.query(Bot).order_by(Bot.id)
-    bot_infos = [f"{bot.name} {bot.channel_id} {bot.frequency}" for bot in bots]
+    bot_infos = [f"name: {bot.name} channel: <#{bot.channel_id}> frequency: {bot.frequency}" for bot in bots]
     return "\n".join(bot_infos)
+
 
 def show_bot_filter(text, user, channel):
     pattern = ptns.show_bot_pattern
@@ -142,12 +153,19 @@ def show_bot_filter(text, user, channel):
             Bot.name == bot_name).first()
     if not bot:
         raise Exception(f"error: bot {bot_name} not found")
+    template = session.query(Template).filter(
+            Template.id == bot.template_id).first()
     bot_infos = f"name: {bot.name}\n\
-        channel_id: {bot.channel_id}\n\
-        tones: {bot.tones}\n\
-        keywords: {bot.keywords}\n\
-        template_id: {bot.template_id}\n\
-        frequency: {bot.frequency}\n"
+    channel: <#{bot.channel_id}>\n\
+    tones: {bot.tones}\n\
+    keywords: {bot.keywords}\n\
+    template_id: {bot.template_id}\n\
+    frequency: {bot.frequency}\n\
+    owner: <@{bot.owner_slack_id}>
+    if template:
+        bot_infos += f"template: \n\
+            name: {template.name}\n\
+            text: {template.text}\n"
     return bot_infos
 
 
@@ -173,6 +191,46 @@ def create_bot_filter(text, user, channel):
             tones="default,ラッパーの口調,幼い子供の口調,吟遊詩人の口調,老人の口調,語尾が「ぴょん」の口調",
             keywords="バックエンド,フロントエンド,セキュリティ",
             template_id=template_id,
+            frequency="daily",
+            start_from=datetime.datetime.now(),
+            owner_slack_id=user
+        )
+        session.add(new_bot)
+        session.commit()
+        jobs[new_bot.name] = add_bot_in_schedule(new_bot)
+    return f"bot {bot_name} created"
+
+
+def easily_create_bot_filter(text, user, channel):
+    pattern = ptns.easily_create_bot_pattern
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group('bot_name')
+    with Session() as session:
+        same_name_bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if same_name_bot:
+            raise Exception(f"error: bot {bot_name} exists")
+        template_name = bot_name + "_template"
+        same_name_template = session.query(Template).filter(
+            Template.name == template_name).first()
+        if same_name_template:
+            raise Exception(f"error: template {template_name} exists")
+        template_text = result.group('template_text') if result.group('template_text') else ""
+        new_template = Template(
+            name=template_name,
+            text=template_text,
+            owner_slack_id=user
+        )
+        session.add(new_template)
+        session.flush()
+        new_bot = Bot(
+            name=bot_name,
+            channel_id=channel,
+            tones="default,ラッパーの口調,幼い子供の口調,吟遊詩人の口調,老人の口調,語尾が「ぴょん」の口調",
+            keywords="バックエンド,フロントエンド,セキュリティ",
+            template_id=new_template.id,
             frequency="daily",
             start_from=datetime.datetime.now(),
             owner_slack_id=user
@@ -389,6 +447,8 @@ def schedule_tasks():
 
 
 def add_bot_in_schedule(bot):
+    if bot.frequency == "never":
+        return
     if bot.frequency == "daily":
         start_from = bot.start_from.strftime("%H:%M")
         return schedule.every().day.at(start_from).do(lambda: bot_run_post(bot.id)).tag(bot.name)

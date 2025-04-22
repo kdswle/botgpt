@@ -10,6 +10,7 @@ class Patterns:
     create_bot_pattern = r'\A<[^>]*> create bot (\S+)'
     set_template_to_bot_pattern = r'\A<[^>]*> set (\S+) template (\S+)\Z'
     set_frequency_to_bot_pattern = r'\A<[^>]*> set (\S+) frequency (\S+)\Z'
+    set_start_from_to_bot_pattern = r'\A<[^>]*> set (\S+) start_from (\S+)\Z'
     set_keywords_to_bot_pattern = r'\A<[^>]*> set (\S+) keywords (\S+)\Z'
     set_tones_to_bot_pattern = r'\A<[^>]*> set (\S+) tones (\S+)\Z'
     create_template_pattern = r'\A<[^>]*> create template (\S+) ?(\S[\s\S]*)?\Z'

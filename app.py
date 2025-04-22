@@ -42,6 +42,7 @@ def respond(event, say):
         text = set_tones_to_bot_filter(text, user, channel)
         text = set_keywords_to_bot_filter(text, user, channel)
         text = set_frequency_to_bot_filter(text, user, channel)
+        text = set_start_from_to_bot_filter(text, user, channel)
         text = create_template_filter(text, user, channel)
         text = delete_template_filter(text, user, channel)
         text = set_template_filter(text, user, channel)

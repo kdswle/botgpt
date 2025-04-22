@@ -42,6 +42,7 @@ def respond(event, say):
         text = set_tones_to_bot_filter(text, user, channel)
         text = set_keywords_to_bot_filter(text, user, channel)
         text = set_frequency_to_bot_filter(text, user, channel)
+        text = set_start_from_to_bot_filter(text, user, channel)
         text = create_template_filter(text, user, channel)
         text = delete_template_filter(text, user, channel)
         text = set_template_filter(text, user, channel)
@@ -292,7 +293,31 @@ def set_frequency_to_bot_filter(text, user, channel):
             jobs[bot_name] = add_bot_in_schedule(bot)
     return f"bot {bot_name} frequency updated"
 
+def set_start_from_to_bot_filter(text, user, channel):
+    pattern = ptns.set_start_from_to_bot_pattern
+    result = re.match(pattern, text)
+    if not result:
+        return text
+    bot_name = result.group(1)
+    with Session() as session:
+        bot = session.query(Bot).filter(
+            Bot.name == bot_name).first()
+        if not bot:
+            raise Exception(f"error: template {bot_name} not found")
+        if not result.group(2):
+            raise Exception("error: bad request missing start_from text")
+        if bot.owner_slack_id != user:
+            raise Exception("error: permission error")
+        start_from = result.group(2)
+        bot.start_from = datetime.date.fromisoformat(start_from)
+        session.add(bot)
+        session.commit()
 
+        if bot_name in jobs.keys():
+            schedule.clear(bot_name)
+            jobs[bot_name] = add_bot_in_schedule(bot)
+    return f"bot {bot_name} start_from updated"
+    
 def set_keywords_to_bot_filter(text, user, channel):
     pattern = ptns.set_keywords_to_bot_pattern
     result = re.match(pattern, text)

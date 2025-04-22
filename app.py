@@ -309,7 +309,7 @@ def set_start_from_to_bot_filter(text, user, channel):
         if bot.owner_slack_id != user:
             raise Exception("error: permission error")
         start_from = result.group(2)
-        bot.start_from = datetime.fromisoformat(start_from)
+        bot.start_from = datetime.date.fromisoformat(start_from)
         session.add(bot)
         session.commit()
 
